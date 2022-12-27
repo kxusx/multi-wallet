@@ -6,14 +6,8 @@ pragma solidity ^0.8.13;
 
 
 contract MultiSigWallet {
-    event Deposit(address indexed sender, uint amount, uint balance);
-    event SubmitTransaction(
-        address indexed owner,
-        uint indexed txIndex,
-        address indexed to,
-        uint value,
-        bytes data
-    );
+    event Deposit(address indexed sender, uint amount, uint balance); // no approval reqd
+    event SubmitTransaction(address indexed owner, uint indexed txIndex, address indexed to, uint value, bytes data);
     event ConfirmTransaction(address indexed owner, uint indexed txIndex);
     event RevokeConfirmation(address indexed owner, uint indexed txIndex);
     event ExecuteTransaction(address indexed owner, uint indexed txIndex);
@@ -23,18 +17,20 @@ contract MultiSigWallet {
     uint public numConfirmationsRequired;
 
     struct Transaction {
-        address to;
-        uint value;
-        bytes data;
-        bool executed;
-        uint numConfirmations;
+        address to; // receptient
+        uint value; 
+        bytes data; // additional data may be shared
+        bool executed; // indicates if transaction has been executed
+        uint numConfirmations; 
     }
 
     // mapping from tx index => owner => bool
-    mapping(uint => mapping(address => bool)) public isConfirmed;
+    mapping(uint => mapping(address => bool)) public isConfirmed; 
+    // !!! will add this in the struct of transaction later, faced issues constructing transaction struct in submitTransaction !!!
 
     Transaction[] public transactions;
 
+    // confirms if msg sender is an owner of the wallet
     modifier onlyOwner() {
         require(isOwner[msg.sender], "not owner");
         _;
@@ -56,23 +52,19 @@ contract MultiSigWallet {
     }
 
     constructor(address[] memory _owners, uint _numConfirmationsRequired) {
-        require(_owners.length > 0, "owners required");
-        require(
-            _numConfirmationsRequired > 0 &&
-                _numConfirmationsRequired <= _owners.length,
+        require(_owners.length > 0, "owners required"); // array of owners is not empty 
+        require( _numConfirmationsRequired > 0 && _numConfirmationsRequired <= _owners.length,
             "invalid number of required confirmations"
         );
-
         for (uint i = 0; i < _owners.length; i++) {
             address owner = _owners[i];
 
             require(owner != address(0), "invalid owner");
-            require(!isOwner[owner], "owner not unique");
+            require(!isOwner[owner], "owner not unique"); // to check if owner doesn't already exist  
 
             isOwner[owner] = true;
             owners.push(owner);
         }
-
         numConfirmationsRequired = _numConfirmationsRequired;
     }
 
@@ -80,11 +72,11 @@ contract MultiSigWallet {
         emit Deposit(msg.sender, msg.value, address(this).balance);
     }
 
-    function submitTransaction(
-        address _to,
-        uint _value,
-        bytes memory _data
-    ) public onlyOwner {
+    // SUBMIT TRANSACTION
+    function submitTransaction(address _to, uint _value, bytes memory _data) 
+        public 
+        onlyOwner 
+    {
         uint txIndex = transactions.length;
 
         transactions.push(
@@ -105,7 +97,7 @@ contract MultiSigWallet {
         onlyOwner
         txExists(_txIndex)
         notExecuted(_txIndex)
-        notConfirmed(_txIndex)
+        notConfirmed(_txIndex) // owner should not have already confirmed the transaction yet
     {
         Transaction storage transaction = transactions[_txIndex];
         transaction.numConfirmations += 1;
