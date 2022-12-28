@@ -15,6 +15,8 @@ contract MultiSigWallet {
     address[] public owners;
     mapping(address => bool) public isOwner;
     uint public numConfirmationsRequired;
+    uint public balance;
+    uint public minBalance; // min balance required in wallet
 
     struct Transaction {
         address to; // receptient
@@ -22,11 +24,16 @@ contract MultiSigWallet {
         bytes data; // additional data may be shared
         bool executed; // indicates if transaction has been executed
         uint numConfirmations; 
+        // who submitted transaction
+        address proposerAddress;
     }
 
     // mapping from tx index => owner => bool
     mapping(uint => mapping(address => bool)) public isConfirmed; 
     // !!! will add this in the struct of transaction later, faced issues constructing transaction struct in submitTransaction !!!
+    
+    // keep track of all owners deposits in the wallet
+    mapping(address => uint) public ownerDeposits;
 
     Transaction[] public transactions;
 
@@ -51,7 +58,12 @@ contract MultiSigWallet {
         _;
     }
 
-    constructor(address[] memory _owners, uint _numConfirmationsRequired) {
+    modifier proposer(uint _txIndex){
+        require(transactions[_txIndex].proposerAddress == msg.sender, "not proposer");
+        _;
+    }
+
+    constructor(address[] memory _owners, uint _numConfirmationsRequired, uint _minBalance) {
         require(_owners.length > 0, "owners required"); // array of owners is not empty 
         require( _numConfirmationsRequired > 0 && _numConfirmationsRequired <= _owners.length,
             "invalid number of required confirmations"
@@ -66,9 +78,16 @@ contract MultiSigWallet {
             owners.push(owner);
         }
         numConfirmationsRequired = _numConfirmationsRequired;
+        minBalance = _minBalance;
+        balance = 0;
     }
 
     function deposit() external payable {
+        balance += msg.value;
+        // check if its owner depositing then increase ownerDeposits 
+        if(isOwner[msg.sender]){
+            ownerDeposits[msg.sender] += msg.value;
+        }
         emit Deposit(msg.sender, msg.value, address(this).balance);
     }
 
@@ -79,13 +98,20 @@ contract MultiSigWallet {
     {
         uint txIndex = transactions.length;
 
+        // check for min balance in wallet
+        require(address(this).balance >= minBalance*1000000000000000000, "insufficient funds");
+
+        // check if this owner has deposited enough funds
+        require(ownerDeposits[msg.sender] >= _value*1000000000000000000, "owner should contribute more");
+
         transactions.push(
             Transaction({
                 to: _to,
                 value: _value,
                 data: _data,
                 executed: false,
-                numConfirmations: 0
+                numConfirmations: 0,
+                proposerAddress: msg.sender
             })
         );
 
@@ -111,6 +137,7 @@ contract MultiSigWallet {
         onlyOwner
         txExists(_txIndex)
         notExecuted(_txIndex)
+        proposer(_txIndex)
     {
         Transaction storage transaction = transactions[_txIndex];
 
@@ -125,6 +152,8 @@ contract MultiSigWallet {
             transaction.data
         );
         require(success, "tx failed");
+
+        ownerDeposits[transaction.proposerAddress] -= transaction.value*1000000000000000000;
 
         emit ExecuteTransaction(msg.sender, _txIndex);
     }
